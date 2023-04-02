@@ -11,7 +11,6 @@ from models.utils import scale_anything, get_activation, cleanup, chunk_batch
 from models.network_utils import get_encoding, get_mlp, get_encoding_with_network
 from nerfacc import ContractionType
 
-
 def contract_to_unisphere(x, radius, contraction_type):
     if contraction_type == ContractionType.AABB:
         x = scale_anything(x, (-radius, radius), (0, 1))
@@ -44,7 +43,7 @@ class MarchingCubeHelper(nn.Module):
     def grid_vertices(self):
         if self.verts is None:
             x, y, z = torch.linspace(*self.points_range, self.resolution), torch.linspace(*self.points_range, self.resolution), torch.linspace(*self.points_range, self.resolution)
-            x, y, z = torch.meshgrid(x, y, z)
+            x, y, z = torch.meshgrid(x, y, z, indexing='ij')
             verts = torch.cat([x.reshape(-1, 1), y.reshape(-1, 1), z.reshape(-1, 1)], dim=-1).reshape(-1, 3)
             self.verts = verts
         return self.verts
@@ -132,8 +131,7 @@ class VolumeDensity(BaseImplicitGeometry):
         density = self.encoding_with_network(points.reshape(-1, self.n_input_dims)).reshape(*points.shape[:-1], self.n_output_dims)[...,0]
         if 'density_activation' in self.config:
             density = get_activation(self.config.density_activation)(density + float(self.config.density_bias))
-        return -density      
-
+        return -density
 
 @models.register('volume-sdf')
 class VolumeSDF(BaseImplicitGeometry):

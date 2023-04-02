@@ -135,6 +135,9 @@ class NeuSModel(BaseModel):
 
         sdf, sdf_grad, feature = self.geometry(positions, with_grad=True, with_feature=True)
         normal = F.normalize(sdf_grad, p=2, dim=-1)
+        # neg_dirs = -t_dirs
+        # nov = normal @ neg_dirs
+        # ref_dir = 2.0 * nov * normal - neg_dirs
         alpha = self.get_alpha(sdf, normal, t_dirs, dists)[...,None]
         rgb = self.texture(feature, t_dirs, normal)
 

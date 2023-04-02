@@ -2,6 +2,7 @@ import math
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 import models
 from models.base import BaseModel
@@ -46,7 +47,7 @@ class NeRFModel(BaseModel):
         update_module_step(self.texture, epoch, global_step)
 
         def occ_eval_fn(x):
-            density, _ = self.geometry(x)
+            density = self.geometry(x, with_grad=False, with_feature=False)
             # approximate for 1 - torch.exp(-density[...,None] * self.render_step_size) based on taylor series
             return density[...,None] * self.render_step_size
         
@@ -66,7 +67,7 @@ class NeRFModel(BaseModel):
             t_origins = rays_o[ray_indices]
             t_dirs = rays_d[ray_indices]
             positions = t_origins + t_dirs * (t_starts + t_ends) / 2.
-            density, _ = self.geometry(positions)
+            density = self.geometry(positions, with_grad=False, with_feature=False)
             return density[...,None]
         
         def rgb_sigma_fn(t_starts, t_ends, ray_indices):
@@ -74,7 +75,7 @@ class NeRFModel(BaseModel):
             t_origins = rays_o[ray_indices]
             t_dirs = rays_d[ray_indices]
             positions = t_origins + t_dirs * (t_starts + t_ends) / 2.
-            density, feature = self.geometry(positions) 
+            density, feature = self.geometry(positions, with_grad=False)
             rgb = self.texture(feature, t_dirs)
             return rgb, density[...,None]
 
@@ -98,7 +99,12 @@ class NeRFModel(BaseModel):
         positions = t_origins + t_dirs * midpoints  
         intervals = t_ends - t_starts
 
-        density, feature = self.geometry(positions) 
+        # positions_ = positions.clone()
+        # density, feature, density_grad = self.geometry(positions_, with_grad=True, with_feature=True)
+        # assert not torch.any(density_grad.isnan()), "grad has nan"
+        # normal = -F.normalize(density_grad, p=2, dim=-1)
+        # assert not torch.any(normal.isnan()), "normal has nan"
+        density, feature, density_grad = self.geometry(positions)
         rgb = self.texture(feature, t_dirs)
 
         weights = render_weight_from_density(t_starts, t_ends, density[...,None], ray_indices=ray_indices, n_rays=n_rays)
@@ -106,6 +112,8 @@ class NeRFModel(BaseModel):
         depth = accumulate_along_rays(weights, ray_indices, values=midpoints, n_rays=n_rays)
         comp_rgb = accumulate_along_rays(weights, ray_indices, values=rgb, n_rays=n_rays)
         comp_rgb = comp_rgb + self.background_color * (1.0 - opacity)       
+        # comp_normal = accumulate_along_rays(weights,ray_indices, values=normal, n_rays=n_rays)
+        # comp_normal = F.normalize(comp_normal, p=2, dim=-1)
 
         opacity, depth = opacity.squeeze(-1), depth.squeeze(-1)
 
@@ -113,6 +121,7 @@ class NeRFModel(BaseModel):
             'comp_rgb': comp_rgb,
             'opacity': opacity,
             'depth': depth,
+            # 'comp_normal' : comp_normal,
             'rays_valid': opacity > 0,
             'num_samples': torch.as_tensor([len(t_starts)], dtype=torch.int32, device=rays.device)
         }
